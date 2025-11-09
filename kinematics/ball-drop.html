@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Free Fall Physics Simulation</title>
+<style>
+  body {
+    margin: 0;
+    padding: 20px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f5f5f5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+  }
+  
+  #container {
+    max-width: 600px;
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  }
+  
+  h1 {
+    text-align: center;
+    color: #333;
+    margin-top: 0;
+    font-size: 24px;
+  }
+  
+  #controls {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  
+  .control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  
+  .control-group label {
+    font-size: 12px;
+    color: #666;
+    font-weight: 600;
+  }
+  
+  input[type="range"] {
+    width: 150px;
+  }
+  
+  .slider-value {
+    font-size: 14px;
+    color: #333;
+    font-weight: bold;
+  }
+  
+  button {
+    padding: 10px 20px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    align-self: flex-end;
+  }
+  
+  button:hover {
+    background: #0056b3;
+  }
+  
+  button:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+  }
+  
+  #pauseBtn {
+    background: #28a745;
+  }
+  
+  #pauseBtn:hover {
+    background: #218838;
+  }
+  
+  #pauseBtn.paused {
+    background: #ffc107;
+  }
+  
+  #pauseBtn.paused:hover {
+    background: #e0a800;
+  }
+  
+  canvas {
+    display: block;
+    border: 1px solid #ddd;
+    margin: 0 auto 10px;
+    background: #fafafa;
+  }
+  
+  #readouts {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    margin-top: 10px;
+  }
+  
+  .readout {
+    text-align: center;
+  }
+  
+  .readout-label {
+    font-size: 11px;
+    color: #666;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  
+  .readout-value {
+    font-size: 18px;
+    color: #333;
+    font-weight: bold;
+    margin-top: 5px;
+  }
+  
+  .graph-label {
+    text-align: center;
+    font-size: 12px;
+    color: #666;
+    font-weight: 600;
+    margin: 5px 0;
+  }
+  
+  .button-group {
+    display: flex;
+    gap: 10px;
+  }
+</style>
+</head>
+<body>
+<div id="container">
+  <h1>Free Fall Physics Simulation</h1>
+  
+  <div id="controls">
+    <div class="control-group">
+      <label>Initial Height (m)</label>
+      <input type="range" id="heightSlider" min="1" max="20" value="10" step="0.5">
+      <span class="slider-value" id="heightValue">10.0 m</span>
+    </div>
+    
+    <div class="control-group">
+      <label>Initial Velocity (m/s)</label>
+      <input type="range" id="velocitySlider" min="-20" max="20" value="0" step="0.5">
+      <span class="slider-value" id="velocityValue">0.0 m/s</span>
+    </div>
+    
+    <div class="button-group">
+      <button id="resetBtn">Reset/Start</button>
+      <button id="pauseBtn" disabled>Pause</button>
+    </div>
+  </div>
+  
+  <canvas id="animationCanvas" width="500" height="400"></canvas>
+  
+  <div class="graph-label">Displacement vs Time</div>
+  <canvas id="graphY" width="500" height="120"></canvas>
+  
+  <div class="graph-label">Velocity vs Time</div>
+  <canvas id="graphV" width="500" height="120"></canvas>
+  
+  <div class="graph-label">Acceleration vs Time</div>
+  <canvas id="graphA" width="500" height="120"></canvas>
+  
+  <div id="readouts">
+    <div class="readout">
+      <div class="readout-label">Time (s)</div>
+      <div class="readout-value" id="timeReadout">0.00</div>
+    </div>
+    <div class="readout">
+      <div class="readout-label">Position (m)</div>
+      <div class="readout-value" id="posReadout">0.00</div>
+    </div>
+    <div class="readout">
+      <div class="readout-label">Velocity (m/s)</div>
+      <div class="readout-value" id="velReadout">0.00</div>
+    </div>
+    <div class="readout">
+      <div class="readout-label">Accel (m/s²)</div>
+      <div class="readout-value" id="accelReadout">0.00</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Constants
+const G = 9.81; // m/s² (positive value, direction handled separately)
+const BALL_RADIUS = 8; // pixels
+const GRAPH_TIME_WINDOW = 5; // seconds visible in graphs
+const FPS = 60;
+const FRAME_TIME = 1000 / FPS;
+const CANVAS_MARGIN = 50; // pixels margin for ball visibility
+
+// Canvas elements
+const animCanvas = document.getElementById('animationCanvas');
+const animCtx = animCanvas.getContext('2d');
+const graphYCanvas = document.getElementById('graphY');
+const graphYCtx = graphYCanvas.getContext('2d');
+const graphVCanvas = document.getElementById('graphV');
+const graphVCtx = graphVCanvas.getContext('2d');
+const graphACanvas = document.getElementById('graphA');
+const graphACtx = graphACanvas.getContext('2d');
+
+// Control elements
+const heightSlider = document.getElementById('heightSlider');
+const velocitySlider = document.getElementById('velocitySlider');
+const heightValue = document.getElementById('heightValue');
+const velocityValue = document.getElementById('velocityValue');
+const resetBtn = document.getElementById('resetBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+
+// Readout elements
+const timeReadout = document.getElementById('timeReadout');
+const posReadout = document.getElementById('posReadout');
+const velReadout = document.getElementById('velReadout');
+const accelReadout = document.getElementById('accelReadout');
+
+// Simulation state
+let h0 = 10; // initial height (m)
+let v0 = 0;  // initial velocity (m/s, positive = upward)
+let startTime = null;
+let pausedTime = 0;
+let pauseStartTime = null;
+let isRunning = false;
+let isPaused = false;
+let animationId = null;
+let maxHeightReached = 0; // Track maximum height for dynamic scaling
+
+// Data history for graphs
+let dataHistory = {
+  time: [],
+  position: [],
+  velocity: [],
+  acceleration: []
+};
+
+// Update slider displays
+heightSlider.addEventListener('input', () => {
+  heightValue.textContent = parseFloat(heightSlider.value).toFixed(1) + ' m';
+});
+
+velocitySlider.addEventListener('input', () => {
+  velocityValue.textContent = parseFloat(velocitySlider.value).toFixed(1) + ' m/s';
+});
+
+// Reset button handler
+resetBtn.addEventListener('click', () => {
+  h0 = parseFloat(heightSlider.value);
+  v0 = parseFloat(velocitySlider.value);
+  resetSimulation();
+});
+
+// Pause button handler
+pauseBtn.addEventListener('click', () => {
+  if (isPaused) {
+    // Resume
+    isPaused = false;
+    pausedTime += performance.now() - pauseStartTime;
+    pauseBtn.textContent = 'Pause';
+    pauseBtn.classList.remove('paused');
+    animationId = requestAnimationFrame(animate);
+  } else {
+    // Pause
+    isPaused = true;
+    pauseStartTime = performance.now();
+    pauseBtn.textContent = 'Resume';
+    pauseBtn.classList.add('paused');
+    if (animationId) {
+      cancelAnimationFrame(animationId);
+    }
+  }
+});
+
+// Reset simulation
+function resetSimulation() {
+  if (animationId) {
+    cancelAnimationFrame(animationId);
+  }
+  
+  startTime = null;
+  pausedTime = 0;
+  pauseStartTime = null;
+  isRunning = true;
+  isPaused = false;
+  maxHeightReached = h0;
+  
+  dataHistory = {
+    time: [],
+    position: [],
+    velocity: [],
+    acceleration: []
+  };
+  
+  // Disable sliders during simulation
+  heightSlider.disabled = true;
+  velocitySlider.disabled = true;
+  pauseBtn.disabled = false;
+  pauseBtn.textContent = 'Pause';
+  pauseBtn.classList.remove('paused');
+  
+  // Clear canvases
+  clearCanvas(animCtx, animCanvas.width, animCanvas.height);
+  clearCanvas(graphYCtx, graphYCanvas.width, graphYCanvas.height);
+  clearCanvas(graphVCtx, graphVCanvas.width, graphVCanvas.height);
+  clearCanvas(graphACtx, graphACanvas.width, graphACanvas.height);
+  
+  // Start animation
+  animationId = requestAnimationFrame(animate);
+}
+
+// Main animation loop
+function animate(timestamp) {
+  if (!startTime) startTime = timestamp - pausedTime;
+  const t = (timestamp - startTime - pausedTime) / 1000; // time in seconds
+  
+  // Physics calculations (upward positive convention)
+  const y = h0 + v0 * t - 0.5 * G * t * t; // position
+  const v = v0 - G * t; // velocity
+  const a = -G; // acceleration (constant, downward)
+  
+  // Track maximum height reached
+  if (y > maxHeightReached) {
+    maxHeightReached = y;
+  }
+  
+  // Check if ball has hit ground (y <= 0)
+  if (y <= 0) {
+    // Stop at ground level
+    isRunning = false;
+    isPaused = false;
+    heightSlider.disabled = false;
+    velocitySlider.disabled = false;
+    pauseBtn.disabled = true;
+    
+    // Record final state
+    recordData(t, 0, v0 - G * t, a);
+    
+    // Draw final frame
+    drawAnimation(0);
+    updateReadouts(t, 0, v0 - G * t, a);
+    drawGraphs(t);
+    
+    return;
+  }
+  
+  // Record data
+  recordData(t, y, v, a);
+  
+  // Draw animation
+  drawAnimation(y);
+  
+  // Update readouts
+  updateReadouts(t, y, v, a);
+  
+  // Draw graphs
+  drawGraphs(t);
+  
+  // Continue animation
+  if (isRunning && !isPaused) {
+    animationId = requestAnimationFrame(animate);
+  }
+}
+
+// Record data point
+function recordData(t, y, v, a) {
+  dataHistory.time.push(t);
+  dataHistory.position.push(y);
+  dataHistory.velocity.push(v);
+  dataHistory.acceleration.push(a);
+}
+
+// Draw animation canvas with dynamic scaling
+function drawAnimation(y) {
+  clearCanvas(animCtx, animCanvas.width, animCanvas.height);
+  
+  // Calculate dynamic viewport
+  // Add some padding above max height for better visibility
+  const viewportMax = Math.max(maxHeightReached * 1.2, 5);
+  const viewportMin = 0;
+  const viewportRange = viewportMax - viewportMin;
+  const scale = (animCanvas.height - 2 * CANVAS_MARGIN) / viewportRange;
+  
+  // Helper function to convert meters to canvas pixels
+  function metersToPixels(meters) {
+    return animCanvas.height - CANVAS_MARGIN - (meters - viewportMin) * scale;
+  }
+  
+  // Draw grid lines
+  const gridSpacing = calculateGridSpacing(viewportRange);
+  animCtx.strokeStyle = '#e0e0e0';
+  animCtx.lineWidth = 1;
+  animCtx.fillStyle = '#999';
+  animCtx.font = '10px sans-serif';
+  
+  for (let h = 0; h <= viewportMax; h += gridSpacing) {
+    const py = metersToPixels(h);
+    
+    // Draw grid line
+    animCtx.beginPath();
+    animCtx.moveTo(40, py);
+    animCtx.lineTo(animCanvas.width - 10, py);
+    animCtx.stroke();
+    
+    // Draw label
+    animCtx.fillText(h.toFixed(1) + 'm', 5, py + 3);
+  }
+  
+  // Draw ground line (y = 0)
+  const groundY = metersToPixels(0);
+  animCtx.strokeStyle = '#333';
+  animCtx.lineWidth = 3;
+  animCtx.beginPath();
+  animCtx.moveTo(0, groundY);
+  animCtx.lineTo(animCanvas.width, groundY);
+  animCtx.stroke();
+  
+  // Draw ball
+  const ballY = metersToPixels(y);
+  animCtx.fillStyle = '#ff4444';
+  animCtx.strokeStyle = '#cc0000';
+  animCtx.lineWidth = 2;
+  animCtx.beginPath();
+  animCtx.arc(animCanvas.width / 2, ballY, BALL_RADIUS, 0, 2 * Math.PI);
+  animCtx.fill();
+  animCtx.stroke();
+  
+  // Draw current height indicator
+  animCtx.setLineDash([5, 5]);
+  animCtx.strokeStyle = '#ff4444';
+  animCtx.lineWidth = 1;
+  animCtx.beginPath();
+  animCtx.moveTo(animCanvas.width / 2 - 30, ballY);
+  animCtx.lineTo(animCanvas.width / 2 - BALL_RADIUS - 2, ballY);
+  animCtx.stroke();
+  animCtx.setLineDash([]);
+  
+  // Display current height next to ball
+  animCtx.fillStyle = '#ff4444';
+  animCtx.font = 'bold 11px sans-serif';
+  animCtx.fillText(y.toFixed(2) + 'm', animCanvas.width / 2 - 60, ballY - 2);
+}
+
+// Calculate appropriate grid spacing based on viewport range
+function calculateGridSpacing(range) {
+  const targetGridLines = 8;
+  const rawSpacing = range / targetGridLines;
+  
+  // Round to nice numbers (1, 2, 5, 10, 20, 50, etc.)
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawSpacing)));
+  const normalized = rawSpacing / magnitude;
+  
+  if (normalized < 1.5) return magnitude;
+  if (normalized < 3.5) return 2 * magnitude;
+  if (normalized < 7.5) return 5 * magnitude;
+  return 10 * magnitude;
+}
+
+// Update numeric readouts
+function updateReadouts(t, y, v, a) {
+  timeReadout.textContent = t.toFixed(2);
+  posReadout.textContent = y.toFixed(2);
+  velReadout.textContent = v.toFixed(2);
+  accelReadout.textContent = a.toFixed(2);
+}
+
+// Draw graphs with auto-scaling and grid
+function drawGraphs(currentTime) {
+  drawGraph(graphYCtx, graphYCanvas, dataHistory.time, dataHistory.position, currentTime, 'Position (m)');
+  drawGraph(graphVCtx, graphVCanvas, dataHistory.time, dataHistory.velocity, currentTime, 'Velocity (m/s)');
+  drawGraph(graphACtx, graphACanvas, dataHistory.time, dataHistory.acceleration, currentTime, 'Accel (m/s²)');
+}
+
+// Generic graph drawing function with grid
+function drawGraph(ctx, canvas, times, values, currentTime, label) {
+  clearCanvas(ctx, canvas.width, canvas.height);
+  
+  if (times.length === 0) return;
+  
+  // Determine time window (show last 5 seconds)
+  const timeMax = Math.max(currentTime, GRAPH_TIME_WINDOW);
+  const timeMin = Math.max(0, timeMax - GRAPH_TIME_WINDOW);
+  
+  // Filter data within time window
+  const indices = times.map((t, i) => t >= timeMin && t <= timeMax ? i : -1).filter(i => i >= 0);
+  if (indices.length === 0) return;
+  
+  const visibleTimes = indices.map(i => times[i]);
+  const visibleValues = indices.map(i => values[i]);
+  
+  // Auto-scale vertically
+  const valueMin = Math.min(...visibleValues);
+  const valueMax = Math.max(...visibleValues);
+  const valueRange = valueMax - valueMin;
+  const valuePadding = valueRange * 0.1 || 1;
+  const plotMin = valueMin - valuePadding;
+  const plotMax = valueMax + valuePadding;
+  const plotRange = plotMax - plotMin;
+  
+  // Draw horizontal grid lines
+  const numHGridLines = 5;
+  ctx.strokeStyle = '#e8e8e8';
+  ctx.lineWidth = 1;
+  ctx.fillStyle = '#999';
+  ctx.font = '9px sans-serif';
+  
+  for (let i = 0; i <= numHGridLines; i++) {
+    const value = plotMin + (plotRange * i / numHGridLines);
+    const y = canvas.height - 20 - ((value - plotMin) / plotRange) * (canvas.height - 30);
+    
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvas.width, y);
+    ctx.stroke();
+    
+    ctx.fillText(value.toFixed(1), 2, y - 2);
+  }
+  
+  // Draw vertical grid lines (time)
+  const numVGridLines = 5;
+  for (let i = 0; i <= numVGridLines; i++) {
+    const time = timeMin + (GRAPH_TIME_WINDOW * i / numVGridLines);
+    const x = (i / numVGridLines) * canvas.width;
+    
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, canvas.height - 20);
+    ctx.stroke();
+  }
+  
+  // Draw axes
+  ctx.strokeStyle = '#999';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, canvas.height - 20);
+  ctx.lineTo(canvas.width, canvas.height - 20);
+  ctx.stroke();
+  
+  // Draw data line
+  ctx.strokeStyle = '#007bff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  
+  for (let i = 0; i < visibleTimes.length; i++) {
+    const x = ((visibleTimes[i] - timeMin) / GRAPH_TIME_WINDOW) * canvas.width;
+    const y = canvas.height - 20 - ((visibleValues[i] - plotMin) / plotRange) * (canvas.height - 30);
+    
+    if (i === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+  }
+  ctx.stroke();
+  
+  // Draw "now" line
+  const nowX = ((currentTime - timeMin) / GRAPH_TIME_WINDOW) * canvas.width;
+  ctx.strokeStyle = '#ff4444';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.moveTo(nowX, 0);
+  ctx.lineTo(nowX, canvas.height - 20);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  
+  // Draw time labels
+  ctx.fillStyle = '#666';
+  ctx.font = '10px sans-serif';
+  ctx.fillText(timeMin.toFixed(1) + 's', 5, canvas.height - 5);
+  ctx.fillText(timeMax.toFixed(1) + 's', canvas.width - 35, canvas.height - 5);
+}
+
+// Helper function to clear canvas
+function clearCanvas(ctx, width, height) {
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#fafafa';
+  ctx.fillRect(0, 0, width, height);
+}
+
+// Initialize display
+heightValue.textContent = h0.toFixed(1) + ' m';
+velocityValue.textContent = v0.toFixed(1) + ' m/s';
+drawAnimation(h0);
+updateReadouts(0, h0, v0, -G);
+</script>
+</body>
+</html>
